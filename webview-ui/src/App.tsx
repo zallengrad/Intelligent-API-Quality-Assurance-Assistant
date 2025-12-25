@@ -107,7 +107,7 @@ function App() {
             <Tabs.Tab value="testing">Simulasi</Tabs.Tab>
             <Tabs.Tab value="performance">Load Test</Tabs.Tab>
             <Tabs.Tab value="analysis">Analisis</Tabs.Tab>
-            <Tabs.Tab value="project">📚 Project APIs</Tabs.Tab>
+            <Tabs.Tab value="project">All API</Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="documentation" pt="md">
