@@ -2,24 +2,7 @@ import { Card, Text, Stack, Title, Badge, Button, Select, Alert, Group, NumberIn
 import { IconRocket, IconAlertCircle, IconClock, IconCheck, IconX } from '@tabler/icons-react';
 import { useState, useEffect } from 'react';
 import { ApiData } from '../types/api';
-
-// Declare VS Code API for webview
-declare function acquireVsCodeApi(): {
-  postMessage: (message: any) => void;
-  getState: () => any;
-  setState: (state: any) => void;
-};
-
-// Acquire VS Code API once at module level
-let vscode: ReturnType<typeof acquireVsCodeApi> | undefined;
-try {
-  if (typeof acquireVsCodeApi !== 'undefined') {
-    vscode = acquireVsCodeApi();
-    console.log('[PerformanceTab] VS Code API acquired successfully');
-  }
-} catch (error) {
-  console.error('[PerformanceTab] Error acquiring VS Code API:', error);
-}
+import { getVsCodeApi, isVsCodeApiAvailable } from '../utils/vscodeApi';
 
 interface PerformanceTabProps {
   apiData: ApiData;
@@ -53,6 +36,14 @@ interface LoadTestResult {
   successRate: number;
 }
 
+interface AIInsight {
+  grade: string;
+  gradeColor: string;
+  findings: string[];
+  recommendations: string[];
+  bottlenecks: string[];
+}
+
 function PerformanceTab({ apiData }: PerformanceTabProps) {
   const [selectedMethod, setSelectedMethod] = useState(apiData.endpoints[0]?.method || 'GET');
   const [concurrency, setConcurrency] = useState(10);
@@ -63,6 +54,9 @@ function PerformanceTab({ apiData }: PerformanceTabProps) {
   const [result, setResult] = useState<LoadTestResult | null>(null);
   const [startTime, setStartTime] = useState<number>(0);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
+  const [apiError, setApiError] = useState<string>('');
+  const [aiInsights, setAiInsights] = useState<AIInsight | null>(null);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
 
   // Timer for elapsed time
   useEffect(() => {
@@ -98,6 +92,13 @@ function PerformanceTab({ apiData }: PerformanceTabProps) {
         console.log('[PerformanceTab] Test completed:', message.results);
         setResult(message.results);
         setIsRunning(false);
+        
+        // Request AI insights automatically
+        requestAIInsights(message.results);
+      } else if (message.type === 'ai-performance-insights') {
+        console.log('[PerformanceTab] AI Insights received:', message.insights);
+        setAiInsights(message.insights);
+        setIsLoadingInsights(false);
       }
     };
 
@@ -110,6 +111,15 @@ function PerformanceTab({ apiData }: PerformanceTabProps) {
 
   const startLoadTest = () => {
     console.log('[PerformanceTab] Starting load test');
+    
+    // Check if VS Code API is available
+    if (!isVsCodeApiAvailable()) {
+      console.error('[PerformanceTab] VS Code API not available!');
+      setApiError('VS Code API tidak tersedia. Extension mungkin tidak running dengan benar. Silakan reload webview.');
+      return;
+    }
+
+    setApiError(''); // Clear any previous errors
     setIsRunning(true);
     setProgress(null);
     setResult(null);
@@ -126,15 +136,35 @@ function PerformanceTab({ apiData }: PerformanceTabProps) {
 
     console.log('[PerformanceTab] Config:', config);
 
+    const vscode = getVsCodeApi();
     if (vscode) {
       vscode.postMessage({
         type: 'run-load-test',
         config,
       });
       console.log('[PerformanceTab] Message sent to extension');
+    }
+  };
+
+  const requestAIInsights = (testResult: LoadTestResult) => {
+    console.log('[PerformanceTab] Requesting AI insights...');
+    setIsLoadingInsights(true);
+    setAiInsights(null);
+
+    const vscode = getVsCodeApi();
+    if (vscode) {
+      vscode.postMessage({
+        type: 'analyze-performance',
+        results: testResult,
+        config: {
+          endpoint: apiData.endpoint,
+          method: selectedMethod,
+          concurrency,
+          totalRequests,
+        },
+      });
     } else {
-      console.error('[PerformanceTab] VS Code API not available!');
-      setIsRunning(false);
+      setIsLoadingInsights(false);
     }
   };
 
@@ -151,6 +181,13 @@ function PerformanceTab({ apiData }: PerformanceTabProps) {
 
   return (
     <Stack gap="md">
+      {/* API Error Alert */}
+      {apiError && (
+        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error" withCloseButton onClose={() => setApiError('')}>
+          <Text size="sm">{apiError}</Text>
+        </Alert>
+      )}
+
       {/* Configuration Card */}
       <Card shadow="sm" padding="lg" radius="md" withBorder>
         <Title order={5} mb="md">
@@ -352,6 +389,86 @@ function PerformanceTab({ apiData }: PerformanceTabProps) {
               in {formatTime(result.duration)}. Average latency: {result.avgLatency.toFixed(2)}ms.
             </Text>
           </Card>
+
+          {/* AI Performance Insights Card */}
+          {isLoadingInsights && (
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Group gap="xs" mb="md">
+                <Text size="lg" fw={600}>🤖 Analisis Performa AI</Text>
+                <Badge color="blue" variant="light">Sedang menganalisis...</Badge>
+              </Group>
+              <Stack gap="xs">
+                <div style={{ height: '20px', background: '#f0f0f0', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                <div style={{ height: '20px', background: '#f0f0f0', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.2s' }} />
+                <div style={{ height: '20px', background: '#f0f0f0', borderRadius: '4px', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.4s' }} />
+              </Stack>
+            </Card>
+          )}
+
+          {aiInsights && !isLoadingInsights && (
+            <Card shadow="sm" padding="lg" radius="md" withBorder style={{ borderLeft: `4px solid ${aiInsights.gradeColor}` }}>
+              <Group justify="space-between" mb="md">
+                <Group gap="xs">
+                  <Text size="lg" fw={600}>🤖 Analisis Performa AI</Text>
+                </Group>
+                <Badge color={aiInsights.gradeColor} size="xl" variant="filled">
+                  Grade: {aiInsights.grade}
+                </Badge>
+              </Group>
+
+              <Stack gap="md">
+                {/* Key Findings */}
+                {aiInsights.findings && aiInsights.findings.length > 0 && (
+                  <div>
+                    <Text size="sm" fw={600} mb="xs">📊 Temuan Utama:</Text>
+                    <Stack gap="xs">
+                      {aiInsights.findings.map((finding, idx) => (
+                        <Group key={idx} gap="xs" align="flex-start">
+                          <Text size="sm" c="dimmed" style={{ minWidth: '20px' }}>•</Text>
+                          <Text size="sm" style={{ flex: 1 }}>{finding}</Text>
+                        </Group>
+                      ))}
+                    </Stack>
+                  </div>
+                )}
+
+                <Divider />
+
+                {/* Recommendations */}
+                {aiInsights.recommendations && aiInsights.recommendations.length > 0 && (
+                  <div>
+                    <Text size="sm" fw={600} mb="xs">💡 Rekomendasi:</Text>
+                    <Stack gap="xs">
+                      {aiInsights.recommendations.map((rec, idx) => (
+                        <Group key={idx} gap="xs" align="flex-start">
+                          <Text size="sm" c="dimmed" style={{ minWidth: '20px' }}>{idx + 1}.</Text>
+                          <Text size="sm" style={{ flex: 1 }}>{rec}</Text>
+                        </Group>
+                      ))}
+                    </Stack>
+                  </div>
+                )}
+
+                {/* Bottlenecks */}
+                {aiInsights.bottlenecks && aiInsights.bottlenecks.length > 0 && (
+                  <>
+                    <Divider />
+                    <div>
+                      <Text size="sm" fw={600} mb="xs">⚠️ Potensi Bottleneck:</Text>
+                      <Stack gap="xs">
+                        {aiInsights.bottlenecks.map((bottleneck, idx) => (
+                          <Group key={idx} gap="xs" align="flex-start">
+                            <Text size="sm" c="dimmed" style={{ minWidth: '20px' }}>•</Text>
+                            <Text size="sm" c="orange" style={{ flex: 1 }}>{bottleneck}</Text>
+                          </Group>
+                        ))}
+                      </Stack>
+                    </div>
+                  </>
+                )}
+              </Stack>
+            </Card>
+          )}
         </>
       )}
 

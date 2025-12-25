@@ -2,27 +2,9 @@ import { Card, Text, Code, Stack, Title, Badge, Button, Textarea, Select, Alert,
 import { IconCheck, IconCopy, IconClock } from '@tabler/icons-react';
 import { useState, useEffect } from 'react';
 import { ApiData } from '../types/api';
+import { getVsCodeApi } from '../utils/vscodeApi';
 
-// Declare VS Code API for webview
-declare function acquireVsCodeApi(): {
-  postMessage: (message: any) => void;
-  getState: () => any;
-  setState: (state: any) => void;
-};
-
-// IMPORTANT: Acquire VS Code API only ONCE at module level
-// Calling acquireVsCodeApi() multiple times will throw error
-let vscode: ReturnType<typeof acquireVsCodeApi> | undefined;
-try {
-  if (typeof acquireVsCodeApi !== 'undefined') {
-    vscode = acquireVsCodeApi();
-    console.log('[TestingTab] VS Code API acquired successfully');
-  }
-} catch (error) {
-  console.error('[TestingTab] Error acquiring VS Code API:', error);
-}
-
-interface TestingTabProps {
+interface SimulationTabProps {
   apiData: ApiData;
 }
 
@@ -35,7 +17,7 @@ interface TestResponse {
   duration?: number;
 }
 
-function TestingTab({ apiData }: TestingTabProps) {
+function SimulationTab({ apiData }: SimulationTabProps) {
   const [selectedMethod, setSelectedMethod] = useState(apiData.endpoints[0]?.method || 'GET');
   const [requestBody, setRequestBody] = useState('{\n  \n}');
   const [isLoading, setIsLoading] = useState(false);
@@ -45,15 +27,15 @@ function TestingTab({ apiData }: TestingTabProps) {
   const currentEndpoint = apiData.endpoints.find(e => e.method === selectedMethod) || apiData.endpoints[0];
 
   useEffect(() => {
-    console.log('[TestingTab] Component mounted, listening for messages');
+    console.log('[SimulationTab] Component mounted, listening for messages');
     
     // Listen untuk response dari extension
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
-      console.log('[TestingTab] Received message:', message);
+      console.log('[SimulationTab] Received message:', message);
       
       if (message.type === 'test-request-response') {
-        console.log('[TestingTab] Got test response:', message.response);
+        console.log('[SimulationTab] Got test response:', message.response);
         const duration = requestStartTime > 0 ? Date.now() - requestStartTime : 0;
         setResponse({ ...message.response, duration });
         setIsLoading(false);
@@ -62,13 +44,13 @@ function TestingTab({ apiData }: TestingTabProps) {
 
     window.addEventListener('message', handleMessage);
     return () => {
-      console.log('[TestingTab] Component unmounting, removing listener');
+      console.log('[SimulationTab] Component unmounting, removing listener');
       window.removeEventListener('message', handleMessage);
     };
   }, [requestStartTime]);
 
   const sendTestRequest = () => {
-    console.log('[TestingTab] Sending test request...');
+    console.log('[SimulationTab] Sending test request...');
     setIsLoading(true);
     setResponse(null);
     setRequestStartTime(Date.now());
@@ -80,14 +62,15 @@ function TestingTab({ apiData }: TestingTabProps) {
       body: requestBody,
     };
 
-    console.log('[TestingTab] Request data:', requestData);
+    console.log('[SimulationTab] Request data:', requestData);
 
-    // Use cached VS Code API instance
+    // Use shared VS Code API instance
+    const vscode = getVsCodeApi();
     if (vscode) {
       vscode.postMessage(requestData);
-      console.log('[TestingTab] Message sent to extension via VS Code API');
+      console.log('[SimulationTab] Message sent to extension via VS Code API');
     } else {
-      console.error('[TestingTab] VS Code API not available!');
+      console.error('[SimulationTab] VS Code API not available!');
       setIsLoading(false);
       setResponse({
         status: 0,
@@ -353,4 +336,4 @@ function TestingTab({ apiData }: TestingTabProps) {
   }
 }
 
-export default TestingTab;
+export default SimulationTab;

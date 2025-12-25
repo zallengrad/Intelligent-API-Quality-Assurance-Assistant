@@ -41,6 +41,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'run-load-test':
           await this._handleLoadTest(data, webviewView.webview);
           break;
+        case 'analyze-performance':
+          await this._handlePerformanceAnalysis(data, webviewView.webview);
+          break;
       }
     });
   }
@@ -373,6 +376,117 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const latency = Date.now() - requestStart;
       latencies.push(latency);
       return { success: false, error };
+    }
+  }
+
+  private async _handlePerformanceAnalysis(data: any, webview: vscode.Webview) {
+    console.log('[Performance Analysis] Starting AI analysis:', data.results);
+    
+    try {
+      const { results, config } = data;
+      
+      // Get Gemini API key from configuration
+      const apiKey = vscode.workspace.getConfiguration('nextjsApiInspector').get<string>('geminiApiKey');
+      
+      if (!apiKey) {
+        console.error('[Performance Analysis] Gemini API key not configured');
+        webview.postMessage({
+          type: 'ai-performance-insights',
+          insights: {
+            grade: 'N/A',
+            gradeColor: 'gray',
+            findings: ['API key Gemini belum dikonfigurasi. Silakan atur di pengaturan extension.'],
+            recommendations: [],
+            bottlenecks: [],
+          },
+        });
+        return;
+      }
+
+      // Import Gemini AI
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+      // Create analysis prompt in Indonesian
+      const prompt = `Anda adalah expert dalam performance analysis dan optimization untuk web APIs.
+
+Analisis hasil load testing berikut dan berikan insight yang actionable dalam BAHASA INDONESIA:
+
+**Konfigurasi Test:**
+- Endpoint: ${config.endpoint}
+- Method: ${config.method}
+- Concurrency: ${config.concurrency} virtual users
+- Total Requests: ${config.totalRequests}
+
+**Hasil Test:**
+- Success Rate: ${results.successRate.toFixed(1)}%
+- Total Duration: ${results.duration}ms
+- Average Latency: ${results.avgLatency.toFixed(2)}ms
+- Min Latency: ${results.minLatency.toFixed(2)}ms
+- Max Latency: ${results.maxLatency.toFixed(2)}ms
+- Requests per Second (RPS): ${results.rps.toFixed(2)}
+- Success Count: ${results.successCount}
+- Error Count: ${results.errorCount}
+
+Berikan analisis dalam format JSON SAJA (tanpa markdown, tanpa code blocks) dengan struktur:
+{
+  "grade": "A+/A/B+/B/C+/C/D/F",
+  "gradeColor": "green/yellow/orange/red",
+  "findings": ["temuan 1", "temuan 2", "temuan 3"],
+  "recommendations": ["rekomendasi 1", "rekomendasi 2", "rekomendasi 3"],
+  "bottlenecks": ["bottleneck 1", "bottleneck 2"]
+}
+
+**Kriteria Grading:**
+- A+/A (green): Excellent performance, latency <200ms, success rate 100%, RPS tinggi
+- B+/B (green): Good performance, latency <500ms, success rate >95%
+- C+/C (yellow): Fair performance, latency <1000ms, success rate >90%
+- D (orange): Poor performance, latency <2000ms, success rate >80%
+- F (red): Critical issues, latency >2000ms or success rate <80%
+
+**Findings:** 3-5 observasi kunci tentang performa (BAHASA INDONESIA)
+**Recommendations:** 3-5 saran konkrit untuk improvement (BAHASA INDONESIA)
+**Bottlenecks:** 1-3 potensi bottleneck yang teridentifikasi (BAHASA INDONESIA)
+
+JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
+
+      console.log( '[Performance Analysis] Sending request to Gemini...');
+      
+      const result = await model.generateContent(prompt);
+      const response = result.response;
+      let text = response.text();
+      
+      // Clean up response
+      text = text.trim();
+      if (text.startsWith('```json')) {
+        text = text.replace(/^```json\n/, '').replace(/\n```$/, '');
+      } else if (text.startsWith('```')) {
+        text = text.replace(/^```\n/, '').replace(/\n```$/, '');
+      }
+      
+      const insights = JSON.parse(text);
+      
+      console.log('[Performance Analysis] AI insights generated:', insights);
+      
+      // Send insights to webview
+      webview.postMessage({
+        type: 'ai-performance-insights',
+        insights,
+      });
+      
+    } catch (error) {
+      console.error('[Performance Analysis] Error:', error);
+      webview.postMessage({
+        type: 'ai-performance-insights',
+        insights: {
+          grade: 'N/A',
+          gradeColor: 'gray',
+          findings: ['Terjadi error saat menganalisis performa dengan AI.'],
+          recommendations: ['Coba lagi nanti atau periksa koneksi internet Anda.'],
+          bottlenecks: [],
+        },
+      });
     }
   }
 }
