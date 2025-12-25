@@ -44,6 +44,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'analyze-performance':
           await this._handlePerformanceAnalysis(data, webviewView.webview);
           break;
+        case 'project-scan':
+          await this._handleProjectScan(data, webviewView.webview);
+          break;
+        case 'export-markdown':
+          await this._handleExportMarkdown(data, webviewView.webview);
+          break;
       }
     });
   }
@@ -488,5 +494,285 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
         },
       });
     }
+  }
+
+  /**
+   * Find all Next.js route files in the workspace
+   */
+  private async _findAllRouteFiles(): Promise<vscode.Uri[]> {
+    try {
+      // Search for all route.ts and route.js files, excluding node_modules
+      const files = await vscode.workspace.findFiles(
+        '**/route.{ts,js}',
+        '**/node_modules/**'
+      );
+      
+      console.log(`[Project Scan] Found ${files.length} route files`);
+      return files;
+    } catch (error) {
+      console.error('[Project Scan] Error finding route files:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Handle project-wide scan request
+   */
+  private async _handleProjectScan(data: any, webview: vscode.Webview) {
+    console.log('[Project Scan] Starting project-wide scan');
+    
+    try {
+      // Get Gemini API key
+      const apiKey = vscode.workspace.getConfiguration('nextjsApiInspector').get<string>('geminiApiKey');
+      
+      if (!apiKey) {
+        webview.postMessage({
+          type: 'project-scan-error',
+          error: 'API key Gemini belum dikonfigurasi. Silakan atur di pengaturan extension.',
+        });
+        return;
+      }
+
+      // Find all route files
+      const routeFiles = await this._findAllRouteFiles();
+      
+      if (routeFiles.length === 0) {
+        webview.postMessage({
+          type: 'project-scan-complete',
+          data: {
+            totalFiles: 0,
+            totalEndpoints: 0,
+            apis: [],
+            timestamp: new Date().toISOString(),
+          },
+        });
+        return;
+      }
+
+      // Send initial progress
+      webview.postMessage({
+        type: 'project-scan-progress',
+        progress: 0,
+        current: 0,
+        total: routeFiles.length,
+        message: 'Memulai scan...',
+      });
+
+      // Import AI service
+      const { analyzeCode } = await import('./services/aiService');
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+      
+      const projectApis: any[] = [];
+      let totalEndpoints = 0;
+
+      // Analyze each file
+      for (let i = 0; i < routeFiles.length; i++) {
+        const file = routeFiles[i];
+        const relativePath = path.relative(workspaceRoot, file.fsPath);
+        
+        try {
+          // Send progress update
+          webview.postMessage({
+            type: 'project-scan-progress',
+            progress: Math.round((i / routeFiles.length) * 100),
+            current: i,
+            total: routeFiles.length,
+            message: `Menganalisis ${relativePath}...`,
+          });
+
+          // Read file content
+          const fileContent = fs.readFileSync(file.fsPath, 'utf-8');
+          
+          // Analyze with AI
+          const apiData = await analyzeCode(fileContent);
+          
+          if (apiData) {
+            projectApis.push({
+              filePath: file.fsPath,
+              relativePath: relativePath,
+              apiData: apiData,
+            });
+            
+            totalEndpoints += apiData.endpoints.length;
+          }
+          
+          // Small delay to prevent overwhelming the AI service
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+        } catch (error) {
+          console.error(`[Project Scan] Error analyzing ${relativePath}:`, error);
+          // Continue with next file even if one fails
+        }
+      }
+
+      // Send completion
+      webview.postMessage({
+        type: 'project-scan-complete',
+        data: {
+          totalFiles: projectApis.length,
+          totalEndpoints: totalEndpoints,
+          apis: projectApis,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      console.log(`[Project Scan] Completed: ${projectApis.length} files, ${totalEndpoints} endpoints`);
+      
+    } catch (error) {
+      console.error('[Project Scan] Error:', error);
+      webview.postMessage({
+        type: 'project-scan-error',
+        error: error instanceof Error ? error.message : 'Terjadi error saat scanning project',
+      });
+    }
+  }
+
+  /**
+   * Handle export to markdown request
+   */
+  private async _handleExportMarkdown(data: any, webview: vscode.Webview) {
+    console.log('[Export Markdown] Generating documentation...');
+    
+    try {
+      const { projectData } = data;
+      
+      if (!projectData || !projectData.apis || projectData.apis.length === 0) {
+        vscode.window.showWarningMessage('Tidak ada data API untuk di-export. Silakan scan project terlebih dahulu.');
+        return;
+      }
+
+      // Generate markdown content
+      const markdown = this._generateMarkdown(projectData);
+      
+      // Get workspace root
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+      if (!workspaceRoot) {
+        vscode.window.showErrorMessage('Tidak ada workspace folder yang terbuka');
+        return;
+      }
+
+      // Write to file
+      const filePath = vscode.Uri.joinPath(workspaceRoot, 'API_DOCUMENTATION.md');
+      await vscode.workspace.fs.writeFile(filePath, Buffer.from(markdown, 'utf-8'));
+      
+      // Show success message with option to open file
+      const action = await vscode.window.showInformationMessage(
+        `✅ Dokumentasi API berhasil di-export ke API_DOCUMENTATION.md`,
+        'Buka File'
+      );
+      
+      if (action === 'Buka File') {
+        const doc = await vscode.workspace.openTextDocument(filePath);
+        await vscode.window.showTextDocument(doc);
+      }
+
+      // Notify webview
+      webview.postMessage({
+        type: 'export-success',
+        filePath: filePath.fsPath,
+      });
+      
+    } catch (error) {
+      console.error('[Export Markdown] Error:', error);
+      vscode.window.showErrorMessage(
+        `Error saat export dokumentasi: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Generate markdown documentation from project data
+   */
+  private _generateMarkdown(projectData: any): string {
+    const { totalFiles, totalEndpoints, apis, timestamp } = projectData;
+    
+    let markdown = `# API Documentation\n\n`;
+    markdown += `> Auto-generated by NextJS API Inspector\n`;
+    markdown += `> Generated: ${new Date(timestamp).toLocaleString('id-ID')}\n\n`;
+    
+    // Summary
+    markdown += `## 📊 Summary\n\n`;
+    markdown += `- **Total API Files:** ${totalFiles}\n`;
+    markdown += `- **Total Endpoints:** ${totalEndpoints}\n\n`;
+    markdown += `---\n\n`;
+    
+    // APIs
+    markdown += `## 📚 APIs\n\n`;
+    
+    apis.forEach((api: any, index: number) => {
+      const { relativePath, apiData } = api;
+      
+      markdown += `### ${apiData.endpoint}\n\n`;
+      markdown += `**File:** \`${relativePath}\`\n\n`;
+      
+      // Each method
+      apiData.endpoints.forEach((endpoint: any) => {
+        markdown += `#### ${endpoint.method} ${apiData.endpoint}\n\n`;
+        
+        if (endpoint.description) {
+          markdown += `${endpoint.description}\n\n`;
+        }
+        
+        // Parameters
+        if (endpoint.params && endpoint.params.length > 0) {
+          markdown += `**Parameters:**\n\n`;
+          markdown += `| Name | Type | Location | Required | Description |\n`;
+          markdown += `|------|------|----------|----------|-------------|\n`;
+          
+          endpoint.params.forEach((param: any) => {
+            markdown += `| \`${param.name}\` | ${param.type} | ${param.location} | ${param.required ? '✅' : '❌'} | ${param.description} |\n`;
+          });
+          markdown += `\n`;
+        }
+        
+        // Request Body
+        if (endpoint.requestBody) {
+          markdown += `**Request Body:**\n\n`;
+          markdown += `\`\`\`json\n${endpoint.requestBody.schema}\n\`\`\`\n\n`;
+          
+          if (endpoint.requestBody.example) {
+            markdown += `**Example:**\n\n`;
+            markdown += `\`\`\`json\n${endpoint.requestBody.example}\n\`\`\`\n\n`;
+          }
+        }
+        
+        // Response
+        if (endpoint.responseSchema && endpoint.responseSchema.length > 0) {
+          markdown += `**Response:**\n\n`;
+          
+          endpoint.responseSchema.forEach((response: any) => {
+            markdown += `**${response.status}** - ${response.contentType}\n\n`;
+            markdown += `\`\`\`json\n${response.schema}\n\`\`\`\n\n`;
+            
+            if (response.example) {
+              markdown += `Example:\n\`\`\`json\n${response.example}\n\`\`\`\n\n`;
+            }
+          });
+        }
+        
+        markdown += `---\n\n`;
+      });
+      
+      // Issues
+      if (apiData.issues && apiData.issues.length > 0) {
+        markdown += `**⚠️ Issues:**\n\n`;
+        
+        apiData.issues.forEach((issue: any) => {
+          const icon = issue.severity === 'error' ? '🔴' : issue.severity === 'warning' ? '⚠️' : 'ℹ️';
+          markdown += `${icon} **${issue.title}**\n\n`;
+          markdown += `${issue.description}\n\n`;
+          
+          if (issue.recommendation) {
+            markdown += `*Recommendation:* ${issue.recommendation}\n\n`;
+          }
+        });
+      }
+      
+      if (index < apis.length - 1) {
+        markdown += `\n---\n\n`;
+      }
+    });
+    
+    return markdown;
   }
 }

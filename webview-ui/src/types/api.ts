@@ -52,3 +52,18 @@ export interface ApiData {
   issues: SecurityIssue[]; // Security issues for the entire file
   timestamp?: string;
 }
+
+// Project-wide API scanning types
+export interface ProjectApiData {
+  filePath: string;
+  relativePath: string;
+  apiData: ApiData;
+}
+
+export interface ProjectScanResult {
+  totalFiles: number;
+  totalEndpoints: number;
+  apis: ProjectApiData[];
+  timestamp: string;
+}
+
