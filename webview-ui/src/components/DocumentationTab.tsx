@@ -17,6 +17,13 @@ function DocumentationTab({ apiData }: DocumentationTabProps) {
     return colors[method.toUpperCase()] || 'gray';
   };
 
+  const getStatusColor = (status: number) => {
+    if (status >= 200 && status < 300) return 'green';
+    if (status >= 400 && status < 500) return 'orange';
+    if (status >= 500) return 'red';
+    return 'gray';
+  };
+
   return (
     <Stack gap="md">
       {/* File Endpoint Header */}
@@ -57,21 +64,129 @@ function DocumentationTab({ apiData }: DocumentationTabProps) {
             )}
           </Card>
 
-          {/* Parameters */}
-          {endpoint.params && endpoint.params.length > 0 && (
+          {/* ✅ NEW: Overview Section */}
+          <Card shadow="sm" padding="lg" radius="md" withBorder mt="sm">
+            <Title order={6} mb="md">
+              📋 Overview
+            </Title>
+
+            <Table striped highlightOnHover>
+              <Table.Tbody>
+                <Table.Tr>
+                  <Table.Td fw={500} w={200}>Method</Table.Td>
+                  <Table.Td>
+                    <Badge color={getMethodColor(endpoint.method)}>
+                      {endpoint.method}
+                    </Badge>
+                  </Table.Td>
+                </Table.Tr>
+                <Table.Tr>
+                  <Table.Td fw={500}>URL</Table.Td>
+                  <Table.Td>
+                    <Code>{apiData.endpoint}</Code>
+                  </Table.Td>
+                </Table.Tr>
+                <Table.Tr>
+                  <Table.Td fw={500}>Content-Type</Table.Td>
+                  <Table.Td>
+                    <Code>application/json</Code>
+                  </Table.Td>
+                </Table.Tr>
+                {endpoint.headers && endpoint.headers.some(h => h.name.toLowerCase() === 'authorization') && (
+                  <Table.Tr>
+                    <Table.Td fw={500}>Authentication</Table.Td>
+                    <Table.Td>
+                      <Badge color="red" variant="light">Required</Badge>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        Bearer Token
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+                {endpoint.requestBody && (
+                  <Table.Tr>
+                    <Table.Td fw={500}>Request Body</Table.Td>
+                    <Table.Td>
+                      <Badge color={endpoint.requestBody.required ? 'red' : 'gray'}>
+                        {endpoint.requestBody.required ? 'Required' : 'Optional'}
+                      </Badge>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        {endpoint.requestBody.contentType}
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+                <Table.Tr>
+                  <Table.Td fw={500}>Response Types</Table.Td>
+                  <Table.Td>
+                    <Group gap="xs">
+                      {endpoint.responseSchema.map((resp, idx) => (
+                        <Badge key={idx} color={getStatusColor(resp.status)} size="sm">
+                          {resp.status}
+                        </Badge>
+                      ))}
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              </Table.Tbody>
+            </Table>
+          </Card>
+
+          {/* ✅ NEW: Headers Section */}
+          {endpoint.headers && endpoint.headers.length > 0 && (
             <Card shadow="sm" padding="lg" radius="md" withBorder mt="sm">
               <Title order={6} mb="md">
-                Parameter untuk {endpoint.method}
+                🔑 Headers
               </Title>
 
               <Table striped highlightOnHover>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Nama</Table.Th>
-                    <Table.Th>Tipe</Table.Th>
-                    <Table.Th>Lokasi</Table.Th>
-                    <Table.Th>Wajib</Table.Th>
-                    <Table.Th>Deskripsi</Table.Th>
+                    <Table.Th>Name</Table.Th>
+                    <Table.Th>Required</Table.Th>
+                    <Table.Th>Description</Table.Th>
+                    <Table.Th>Example</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {endpoint.headers.map((header, headerIndex) => (
+                    <Table.Tr key={headerIndex}>
+                      <Table.Td>
+                        <Code>{header.name}</Code>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge color={header.required ? 'red' : 'gray'} size="sm">
+                          {header.required ? 'Required' : 'Optional'}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm">{header.description}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        {header.example && <Code>{header.example}</Code>}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Card>
+          )}
+
+          {/* Parameters - Updated styling */}
+          {endpoint.params && endpoint.params.length > 0 && (
+            <Card shadow="sm" padding="lg" radius="md" withBorder mt="sm">
+              <Title order={6} mb="md">
+                📝 Parameters
+              </Title>
+
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Name</Table.Th>
+                    <Table.Th>Type</Table.Th>
+                    <Table.Th>Location</Table.Th>
+                    <Table.Th>Required</Table.Th>
+                    <Table.Th>Description</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -92,7 +207,7 @@ function DocumentationTab({ apiData }: DocumentationTabProps) {
                       </Table.Td>
                       <Table.Td>
                         <Badge color={param.required ? 'red' : 'gray'} size="sm">
-                          {param.required ? 'Wajib' : 'Opsional'}
+                          {param.required ? 'Required' : 'Optional'}
                         </Badge>
                       </Table.Td>
                       <Table.Td>
@@ -105,37 +220,82 @@ function DocumentationTab({ apiData }: DocumentationTabProps) {
             </Card>
           )}
 
-          {/* Response Schema */}
+          {/* ✅ NEW: Request Body Section */}
+          {endpoint.requestBody && (
+            <Card shadow="sm" padding="lg" radius="md" withBorder mt="sm">
+              <Title order={6} mb="md">
+                📤 Request Body
+              </Title>
+
+              <Stack gap="md">
+                <Group gap="sm">
+                  <Badge color={endpoint.requestBody.required ? 'red' : 'gray'}>
+                    {endpoint.requestBody.required ? 'Required' : 'Optional'}
+                  </Badge>
+                  <Text size="sm" c="dimmed">
+                    {endpoint.requestBody.contentType}
+                  </Text>
+                </Group>
+
+                <div>
+                  <Text size="sm" fw={500} mb="xs">
+                    Schema:
+                  </Text>
+                  <Code block>{endpoint.requestBody.schema}</Code>
+                </div>
+
+                {endpoint.requestBody.example && (
+                  <div>
+                    <Text size="sm" fw={500} mb="xs">
+                      Example:
+                    </Text>
+                    <Code block>{endpoint.requestBody.example}</Code>
+                  </div>
+                )}
+              </Stack>
+            </Card>
+          )}
+
+          {/* Response Schema - Enhanced */}
           {endpoint.responseSchema && endpoint.responseSchema.length > 0 && (
             <Card shadow="sm" padding="lg" radius="md" withBorder mt="sm">
               <Title order={6} mb="md">
-                Skema Response untuk {endpoint.method}
+                📥 Response
               </Title>
 
               <Stack gap="md">
                 {endpoint.responseSchema.map((response, respIndex) => (
                   <div key={respIndex}>
                     <Group gap="sm" mb="xs">
-                      <Badge color={response.status >= 200 && response.status < 300 ? 'green' : 'red'}>
+                      <Badge color={getStatusColor(response.status)} size="lg">
                         {response.status}
                       </Badge>
+                      <Text size="sm" fw={500}>
+                        {response.status >= 200 && response.status < 300 && 'Success'}
+                        {response.status >= 400 && response.status < 500 && 'Client Error'}
+                        {response.status >= 500 && 'Server Error'}
+                      </Text>
                       <Text size="sm" c="dimmed">
-                        {response.contentType}
+                        • {response.contentType}
                       </Text>
                     </Group>
 
                     <Text size="sm" fw={500} mb="xs">
-                      Skema:
+                      Schema:
                     </Text>
                     <Code block>{response.schema}</Code>
 
                     {response.example && (
                       <>
                         <Text size="sm" fw={500} mt="md" mb="xs">
-                          Contoh:
+                          Example:
                         </Text>
                         <Code block>{response.example}</Code>
                       </>
+                    )}
+
+                    {respIndex < endpoint.responseSchema.length - 1 && (
+                      <Divider my="md" />
                     )}
                   </div>
                 ))}

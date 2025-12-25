@@ -20,12 +20,28 @@ export interface ResponseSchema {
   example?: string;
 }
 
+export interface ApiHeader {
+  name: string;
+  required: boolean;
+  description: string;
+  example?: string;
+}
+
+export interface RequestBodySchema {
+  contentType: string;
+  required: boolean;
+  schema: string;
+  example?: string;
+}
+
 // Individual endpoint/method in a route file
 export interface ApiEndpoint {
   method: string;
   summary: string;
   description?: string;
   params: ApiParam[];
+  headers?: ApiHeader[]; // Optional: Header requirements
+  requestBody?: RequestBodySchema; // Optional: Request body schema
   responseSchema: ResponseSchema[];
 }
 
