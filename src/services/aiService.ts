@@ -1,14 +1,17 @@
 /**
- * AI Service - Hybrid Validation Pattern (CoPrompter)
+ * AI Service - Full CoPrompter Pattern Implementation
  * 
  * Menggunakan pendekatan Measurable vs Descriptive Criteria Split:
  * 1. Generate dengan LLM
  * 2. Validasi struktural dengan kode (Fast Path)
- * 3. Validasi kualitatif dengan LLM ringan (Background, Optional)
+ * 3. Evaluasi Measurable Criteria dengan kode (~0ms)
+ * 4. Evaluasi Descriptive Criteria dengan LLM (Background)
+ * 
+ * Sesuai paper CoPrompter Section 5.2, Step 4
  */
 
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
-import { ApiData } from '../types/api';
+import { ApiData, CriteriaEvaluationResult } from '../types/api';
 import { 
   cleanLLMResponse, 
   parseJsonSafely, 
@@ -16,6 +19,11 @@ import {
   ensureCompleteStructure,
   ValidationResult 
 } from './validators';
+import {
+  quickMeasurableCheck,
+  getDefaultApiCriteria,
+  evaluateAllCriteria
+} from './criteriaEvaluator';
 
 let genAI: GoogleGenerativeAI | null = null;
 let cachedModel: GenerativeModel | null = null;
@@ -192,18 +200,34 @@ export async function analyzeCode(codeSnippet: string): Promise<ApiData | null> 
     }
 
     // ========================================
-    // STEP 5: Ensure Complete Structure & Return (Fast Path)
+    // STEP 5: Ensure Complete Structure (Fast Path)
     // ========================================
     const apiData = ensureCompleteStructure(parseResult.data!);
-    
-    const totalTime = Date.now() - startTime;
-    console.log(`[AI Service] Analysis complete in ${totalTime}ms (LLM: ${llmTime}ms, Validation: ${totalTime - llmTime}ms)`);
 
     // ========================================
-    // STEP 6: Background Quality Check (Non-blocking)
+    // STEP 6: Quick Measurable Criteria Check (~0ms, Deterministik)
+    // Sesuai CoPrompter: Measurable criteria dievaluasi dengan kode
     // ========================================
-    validateOutputQualitatively(apiData, validation).catch((err) => {
-      console.warn('[AI Service] Background quality check failed:', err);
+    const measurableCheck = quickMeasurableCheck(apiData);
+    
+    if (!measurableCheck.passed) {
+      console.warn('[AI Service] Measurable criteria failed:', measurableCheck.failedCriteria);
+      // Attach results to apiData for transparency
+      apiData.criteriaResults = measurableCheck.details;
+    } else {
+      console.log('[AI Service] All measurable criteria passed');
+      apiData.criteriaResults = measurableCheck.details;
+    }
+    
+    const totalTime = Date.now() - startTime;
+    console.log(`[AI Service] Analysis complete in ${totalTime}ms (LLM: ${llmTime}ms, Criteria: ${totalTime - llmTime}ms)`);
+
+    // ========================================
+    // STEP 7: Background Descriptive Criteria Evaluation (Non-blocking)
+    // Sesuai CoPrompter: Descriptive criteria dievaluasi dengan LLM
+    // ========================================
+    evaluateDescriptiveCriteriaBackground(apiData, model).catch((err) => {
+      console.warn('[AI Service] Background criteria evaluation failed:', err);
     });
 
     return apiData;
@@ -218,59 +242,61 @@ export async function analyzeCode(codeSnippet: string): Promise<ApiData | null> 
 }
 
 // ============================================================================
-// QUALITATIVE VALIDATION (Descriptive, Background, Non-blocking)
+// DESCRIPTIVE CRITERIA EVALUATION (Background, Non-blocking)
+// Sesuai CoPrompter Section 5.2: Descriptive criteria perlu LLM untuk evaluasi
 // ============================================================================
 
 /**
- * Validasi kualitatif ringan menggunakan LLM.
- * Berjalan di background dan tidak memblokir response ke user.
+ * Evaluasi descriptive criteria di background.
+ * Tidak memblokir response ke user - hasil di-log untuk monitoring.
  * 
- * Hanya log warning jika ada masalah kualitas signifikan.
+ * Criteria yang dievaluasi:
+ * - summary_quality: Apakah summary menjelaskan fungsi dengan jelas?
+ * - issue_recommendation_helpful: Apakah rekomendasi actionable?
  */
-async function validateOutputQualitatively(
-  data: ApiData, 
-  structuralValidation: ValidationResult
+async function evaluateDescriptiveCriteriaBackground(
+  data: ApiData,
+  model: GenerativeModel
 ): Promise<void> {
-  // Skip jika tidak ada endpoint yang terdeteksi
+  // Skip jika tidak ada endpoint
   if (data.endpoints.length === 0) {
-    console.warn('[Quality Check] Skipped: No endpoints detected');
-    return;
-  }
-
-  // Skip jika ada banyak structural warnings (sudah jelas bermasalah)
-  if (structuralValidation.warnings.length > 3) {
-    console.warn('[Quality Check] Skipped: Too many structural warnings');
+    console.warn('[Descriptive Eval] Skipped: No endpoints');
     return;
   }
 
   try {
-    const model = getModel();
+    // Get only descriptive criteria
+    const allCriteria = getDefaultApiCriteria();
+    const descriptiveCriteria = allCriteria.filter(c => c.evaluationType === 'descriptive');
     
-    // Prompt super ringan untuk quality check
-    const qualityPrompt = `Evaluate this API analysis quality. Answer only YES or NO.
+    if (descriptiveCriteria.length === 0) {
+      console.log('[Descriptive Eval] No descriptive criteria to evaluate');
+      return;
+    }
 
-Is this analysis logically sound and complete for a Next.js API route?
-- Endpoint: ${data.endpoint}
-- Methods: ${data.endpoints.map(e => e.method).join(', ')}
-- Issues found: ${data.issues.length}
-
-Answer YES if the analysis seems reasonable, NO if it seems incomplete or wrong.`;
-
-    const result = await model.generateContent(qualityPrompt);
-    const answer = result.response.text().trim().toUpperCase();
+    console.log(`[Descriptive Eval] Evaluating ${descriptiveCriteria.length} criteria...`);
     
-    if (answer.includes('NO')) {
-      console.warn('[Quality Check] LLM flagged potential quality issue for:', data.endpoint);
-      // Di sini bisa ditambahkan logic untuk:
-      // - Mengirim notifikasi ke telemetry
-      // - Menandai hasil sebagai "needs review"
-      // - Trigger re-analysis di background
+    // Evaluate with LLM
+    const results = await evaluateAllCriteria(data, descriptiveCriteria, model);
+    
+    // Log results
+    const passed = results.filter(r => r.passed).length;
+    const failed = results.filter(r => !r.passed).length;
+    
+    if (failed > 0) {
+      const failedIds = results.filter(r => !r.passed).map(r => r.criteriaId);
+      console.warn(`[Descriptive Eval] ${failed} criteria failed:`, failedIds);
     } else {
-      console.log('[Quality Check] Passed for:', data.endpoint);
+      console.log(`[Descriptive Eval] All ${passed} criteria passed`);
+    }
+
+    // Update apiData dengan hasil (untuk tracking)
+    if (data.criteriaResults) {
+      data.criteriaResults.push(...results);
     }
 
   } catch (error) {
-    // Quality check failure tidak boleh mengganggu main flow
-    console.warn('[Quality Check] Error (non-critical):', error);
+    // Background evaluation failure tidak boleh mengganggu main flow
+    console.warn('[Descriptive Eval] Error (non-critical):', error);
   }
 }
