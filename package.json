@@ -3,15 +3,31 @@
   "displayName": "NextJS API Inspector",
   "description": "Automatically analyze and document Next.js API routes with AI-powered insights",
   "version": "0.0.1",
+  "publisher": "zallengrad",
+
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/nextjs-api-inspector"
+  },
+  "keywords": [
+    "nextjs",
+    "api",
+    "documentation",
+    "ai",
+    "gemini",
+    "inspector",
+    "route",
+    "analyzer"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Programming Languages",
+    "Linters",
     "Other"
   ],
-  "activationEvents": [
-    "onView:nextjs-api-inspector-sidebar"
-  ],
+
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {

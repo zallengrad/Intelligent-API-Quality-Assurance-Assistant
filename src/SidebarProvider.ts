@@ -162,7 +162,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         headers: {
           'Content-Type': 'application/json',
         },
-        timeout: 30000, // 30 second timeout (increased from 10s)
+        timeout: 60000, // 60 second timeout (for slow database cold starts)
       };
 
       // Add body for POST/PUT/PATCH

@@ -4,7 +4,6 @@ import { ApiData } from './types/api';
 import DocumentationTab from './components/DocumentationTab';
 import SimulationTab from './components/SimulationTab';
 import AnalysisTab from './components/AnalysisTab';
-import PerformanceTab from './components/PerformanceTab';
 import ProjectOverviewTab from './components/ProjectOverviewTab';
 
 // Mock data untuk tampilan awal
@@ -105,7 +104,6 @@ function App() {
           <Tabs.List>
             <Tabs.Tab value="documentation">Dokumentasi</Tabs.Tab>
             <Tabs.Tab value="testing">Simulasi</Tabs.Tab>
-            <Tabs.Tab value="performance">Load Test</Tabs.Tab>
             <Tabs.Tab value="analysis">Analisis</Tabs.Tab>
             <Tabs.Tab value="project">All API</Tabs.Tab>
           </Tabs.List>
@@ -118,9 +116,6 @@ function App() {
             <SimulationTab apiData={apiData} />
           </Tabs.Panel>
 
-          <Tabs.Panel value="performance" pt="md">
-            <PerformanceTab apiData={apiData} />
-          </Tabs.Panel>
 
           <Tabs.Panel value="analysis" pt="md">
             <AnalysisTab apiData={apiData} />

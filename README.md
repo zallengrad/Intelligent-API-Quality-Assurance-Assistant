@@ -17,13 +17,21 @@ A powerful VS Code extension that automatically analyzes and documents Next.js A
 
 ## Installation
 
-### Prerequisites
+### Option 1: Install from VSIX
 
-- VS Code 1.85.0 or higher
-- Node.js 18+ and npm
-- Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
+1. **Download** the `.vsix` file from your source (GitHub release, shared link, etc.)
+2. **Open VS Code**
+3. **Go to Extensions** (Ctrl+Shift+X)
+4. **Click** the "..." menu (top-right of Extensions panel)
+5. **Select** "Install from VSIX..."
+6. **Choose** the downloaded `.vsix` file
+7. **Reload** VS Code when prompted
 
-### From Source
+---
+
+### Option 2: From Source (For Developers)
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed build instructions.
 
 1. Clone this repository:
    ```bash
@@ -46,13 +54,31 @@ A powerful VS Code extension that automatically analyzes and documents Next.js A
 
 4. Open the project in VS Code and press `F5` to launch the Extension Development Host
 
+---
+
 ## Setup
 
-1. After installing, open VS Code settings (Ctrl+,)
-2. Search for "NextJS API Inspector"
-3. Enter your Google Gemini API key in the `nextjsApiInspector.geminiApiKey` field
+### Getting Your API Key
 
-Alternatively, the extension will prompt you to enter your API key when first activated.
+This extension requires a **free** Google Gemini API key:
+
+1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Copy the generated key
+
+### Configuring the Extension
+
+After installation:
+
+1. Open VS Code settings (Ctrl+,)
+2. Search for "NextJS API Inspector"
+3. Paste your API key in the `nextjsApiInspector.geminiApiKey` field
+
+**Alternative method:**
+- The extension will show a warning on first use
+- Click "Set API Key" button
+- This will open the settings for you
 
 ## Usage
 
@@ -161,6 +187,27 @@ npm run watch:webview
 - **Extension**: TypeScript, VS Code Extension API, esbuild
 - **Webview UI**: React, TypeScript, Vite, Mantine UI
 - **AI**: Google Gemini 1.5 Flash (Latest)
+
+## Building VSIX
+
+To build the extension as a `.vsix` file for distribution:
+
+```bash
+# Install vsce globally (first time only)
+npm install -g @vscode/vsce
+
+# Build the extension
+npm run build
+
+# Package as VSIX
+vsce package
+```
+
+This creates `nextjs-api-inspector-0.0.1.vsix` that can be shared and installed on any VS Code instance.
+
+**Note:** Users who install the `.vsix` will need to configure their own Gemini API key in settings.
+
+**For detailed deployment instructions**, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Limitations
 
