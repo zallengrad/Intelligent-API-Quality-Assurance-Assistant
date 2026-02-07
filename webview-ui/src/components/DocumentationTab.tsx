@@ -1,8 +1,95 @@
-import { Card, Text, Badge, Table, Stack, Title, Code, Group, Divider } from '@mantine/core';
+import { Card, Text, Badge, Table, Stack, Title, Code, Group, Divider, Box } from '@mantine/core';
 import { ApiData } from '../types/api';
+import { useState, useRef, useCallback } from 'react';
 
 interface DocumentationTabProps {
   apiData: ApiData;
+}
+
+// Helper function to format JSON with pretty-print
+const formatJsonPretty = (jsonString: string): string => {
+  try {
+    const parsed = JSON.parse(jsonString);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    // If not valid JSON, return as-is
+    return jsonString;
+  }
+};
+
+// Resizable Code Block component
+interface ResizableCodeBlockProps {
+  content: string;
+  minHeight?: number;
+  defaultHeight?: number;
+}
+
+function ResizableCodeBlock({ content, minHeight = 80, defaultHeight = 150 }: ResizableCodeBlockProps) {
+  const [height, setHeight] = useState(defaultHeight);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isResizing = useRef(false);
+  const startY = useRef(0);
+  const startHeight = useRef(0);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    isResizing.current = true;
+    startY.current = e.clientY;
+    startHeight.current = height;
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      const delta = e.clientY - startY.current;
+      const newHeight = Math.max(minHeight, startHeight.current + delta);
+      setHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      isResizing.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [height, minHeight]);
+
+  const formattedContent = formatJsonPretty(content);
+
+  return (
+    <Box ref={containerRef} style={{ position: 'relative' }}>
+      <Code
+        block
+        style={{
+          height: `${height}px`,
+          overflow: 'auto',
+          whiteSpace: 'pre',
+          resize: 'none',
+        }}
+      >
+        {formattedContent}
+      </Code>
+      {/* Resize handle */}
+      <Box
+        onMouseDown={handleMouseDown}
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '8px',
+          cursor: 'ns-resize',
+          background: 'linear-gradient(to bottom, transparent, rgba(128, 128, 128, 0.3))',
+          borderBottomLeftRadius: '4px',
+          borderBottomRightRadius: '4px',
+        }}
+        title="Drag to resize"
+      />
+    </Box>
+  );
 }
 
 function DocumentationTab({ apiData }: DocumentationTabProps) {
@@ -241,7 +328,7 @@ function DocumentationTab({ apiData }: DocumentationTabProps) {
                   <Text size="sm" fw={500} mb="xs">
                     Schema:
                   </Text>
-                  <Code block>{endpoint.requestBody.schema}</Code>
+                  <ResizableCodeBlock content={endpoint.requestBody.schema} />
                 </div>
 
                 {endpoint.requestBody.example && (
@@ -249,7 +336,7 @@ function DocumentationTab({ apiData }: DocumentationTabProps) {
                     <Text size="sm" fw={500} mb="xs">
                       Example:
                     </Text>
-                    <Code block>{endpoint.requestBody.example}</Code>
+                    <ResizableCodeBlock content={endpoint.requestBody.example} />
                   </div>
                 )}
               </Stack>
@@ -283,14 +370,14 @@ function DocumentationTab({ apiData }: DocumentationTabProps) {
                     <Text size="sm" fw={500} mb="xs">
                       Schema:
                     </Text>
-                    <Code block>{response.schema}</Code>
+                    <ResizableCodeBlock content={response.schema} />
 
                     {response.example && (
                       <>
                         <Text size="sm" fw={500} mt="md" mb="xs">
                           Example:
                         </Text>
-                        <Code block>{response.example}</Code>
+                        <ResizableCodeBlock content={response.example} />
                       </>
                     )}
 
