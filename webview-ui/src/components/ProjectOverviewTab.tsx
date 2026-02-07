@@ -54,6 +54,10 @@ function ProjectOverviewTab() {
         case 'export-success':
           // Show success feedback (optional - VS Code already shows notification)
           break;
+
+        case 'export-postman-success':
+          // Show success feedback for Postman export
+          break;
       }
     };
 
@@ -76,6 +80,15 @@ function ProjectOverviewTab() {
 
     vscodeApi?.postMessage({
       type: 'export-markdown',
+      projectData: projectData,
+    });
+  };
+
+  const handleExportPostman = () => {
+    if (!projectData) return;
+
+    vscodeApi?.postMessage({
+      type: 'export-postman',
       projectData: projectData,
     });
   };
@@ -114,14 +127,25 @@ function ProjectOverviewTab() {
           </Button>
 
           {projectData && (
-            <Button
-              onClick={handleExportMarkdown}
-              variant="light"
-              size="md"
-              disabled={isScanning}
-            >
-              📄 Export to README.md
-            </Button>
+            <>
+              <Button
+                onClick={handleExportMarkdown}
+                variant="light"
+                size="md"
+                disabled={isScanning}
+              >
+                📄 Export to README.md
+              </Button>
+              <Button
+                onClick={handleExportPostman}
+                variant="light"
+                color="orange"
+                size="md"
+                disabled={isScanning}
+              >
+                📦 Export to Postman
+              </Button>
+            </>
           )}
         </Group>
       </Card>

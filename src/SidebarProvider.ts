@@ -50,6 +50,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'export-markdown':
           await this._handleExportMarkdown(data, webviewView.webview);
           break;
+        case 'export-postman':
+          await this._handleExportPostman(data, webviewView.webview);
+          break;
       }
     });
   }
@@ -774,5 +777,186 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
     });
     
     return markdown;
+  }
+
+  /**
+   * Handle export to Postman collection request
+   */
+  private async _handleExportPostman(data: any, webview: vscode.Webview) {
+    console.log('[Export Postman] Generating Postman collection...');
+    
+    try {
+      const { projectData } = data;
+      
+      if (!projectData || !projectData.apis || projectData.apis.length === 0) {
+        vscode.window.showWarningMessage('Tidak ada data API untuk di-export. Silakan scan project terlebih dahulu.');
+        return;
+      }
+
+      // Generate Postman collection
+      const collection = this._generatePostmanCollection(projectData);
+      
+      // Get workspace root
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+      if (!workspaceRoot) {
+        vscode.window.showErrorMessage('Tidak ada workspace folder yang terbuka');
+        return;
+      }
+
+      // Write to file
+      const filePath = vscode.Uri.joinPath(workspaceRoot, 'API_COLLECTION.postman_collection.json');
+      await vscode.workspace.fs.writeFile(filePath, Buffer.from(JSON.stringify(collection, null, 2), 'utf-8'));
+      
+      // Show success message with option to open file
+      const action = await vscode.window.showInformationMessage(
+        `✅ Postman Collection berhasil di-export ke API_COLLECTION.postman_collection.json`,
+        'Buka File'
+      );
+      
+      if (action === 'Buka File') {
+        const doc = await vscode.workspace.openTextDocument(filePath);
+        await vscode.window.showTextDocument(doc);
+      }
+
+      // Notify webview
+      webview.postMessage({
+        type: 'export-postman-success',
+        filePath: filePath.fsPath,
+      });
+      
+    } catch (error) {
+      console.error('[Export Postman] Error:', error);
+      vscode.window.showErrorMessage(
+        `Error saat export Postman collection: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Generate Postman Collection v2.1 from project data
+   */
+  private _generatePostmanCollection(projectData: any): any {
+    const { apis, timestamp } = projectData;
+    
+    // Generate unique ID for collection
+    const collectionId = this._generateUUID();
+    
+    // Build collection items (folders and requests)
+    const items: any[] = [];
+    
+    apis.forEach((api: any) => {
+      const { apiData } = api;
+      
+      // Create folder for each API path
+      const folderItems: any[] = [];
+      
+      apiData.endpoints.forEach((endpoint: any) => {
+        // Build URL object
+        const pathParts = apiData.endpoint.split('/').filter((p: string) => p);
+        
+        // Extract query params from endpoint params
+        const queryParams = endpoint.params
+          ?.filter((p: any) => p.location === 'query')
+          .map((p: any) => ({
+            key: p.name,
+            value: '',
+            description: p.description,
+            disabled: !p.required,
+          })) || [];
+
+        // Extract headers
+        const headers = endpoint.headers?.map((h: any) => ({
+          key: h.name,
+          value: h.example || '',
+          description: h.description,
+          disabled: !h.required,
+        })) || [];
+
+        // Add Content-Type header for methods with body
+        if (['POST', 'PUT', 'PATCH'].includes(endpoint.method.toUpperCase())) {
+          headers.unshift({
+            key: 'Content-Type',
+            value: 'application/json',
+            type: 'text',
+          });
+        }
+
+        // Build request body
+        let requestBody: any = undefined;
+        if (endpoint.requestBody && ['POST', 'PUT', 'PATCH'].includes(endpoint.method.toUpperCase())) {
+          requestBody = {
+            mode: 'raw',
+            raw: endpoint.requestBody.example || endpoint.requestBody.schema || '{}',
+            options: {
+              raw: {
+                language: 'json',
+              },
+            },
+          };
+        }
+
+        // Create request item
+        const requestItem: any = {
+          name: `${endpoint.method} ${apiData.endpoint}`,
+          request: {
+            method: endpoint.method.toUpperCase(),
+            header: headers,
+            url: {
+              raw: `{{base_url}}${apiData.endpoint}`,
+              host: ['{{base_url}}'],
+              path: pathParts,
+              query: queryParams,
+            },
+            description: endpoint.description || endpoint.summary || '',
+          },
+          response: [],
+        };
+
+        // Add body if present
+        if (requestBody) {
+          requestItem.request.body = requestBody;
+        }
+
+        folderItems.push(requestItem);
+      });
+
+      // Create folder for this API
+      items.push({
+        name: apiData.endpoint,
+        item: folderItems,
+        description: `API endpoints for ${apiData.endpoint}`,
+      });
+    });
+
+    // Build the complete collection
+    const collection = {
+      info: {
+        _postman_id: collectionId,
+        name: 'API Collection',
+        description: `Auto-generated by NextJS API Inspector\nGenerated: ${new Date(timestamp).toLocaleString('id-ID')}`,
+        schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+      },
+      item: items,
+      variable: [
+        {
+          key: 'base_url',
+          value: 'http://localhost:3000',
+          type: 'string',
+        },
+      ],
+    };
+
+    return collection;
+  }
+
+  /**
+   * Generate a UUID v4
+   */
+  private _generateUUID(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 }
