@@ -51,13 +51,10 @@ export function cleanLLMResponse(text: string): string {
   }
   
   // Hapus karakter non-printable yang kadang muncul dari LLM
-  cleaned = cleaned.replace(/[\x00-\x1F\x7F]/g, (char) => {
-    // Pertahankan newlines dan tabs yang valid dalam JSON
-    if (char === '\n' || char === '\r' || char === '\t') {
-      return char;
-    }
-    return '';
-  });
+  // Gunakan regex yang aman untuk SonarQube: hapus karakter selain printable ASCII, newline, carriage return, dan tab.
+  // Printable ASCII: \x20-\x7E
+  // Whitespace yang diizinkan: \n (\x0A), \r (\x0D), \t (\x09)
+  cleaned = cleaned.replaceAll(/[^\x20-\x7E\n\r\t]/g, '');
   
   return cleaned.trim();
 }
@@ -82,7 +79,7 @@ export function parseJsonSafely<T>(text: string): ParseResult<T> {
     const positionMatch = message.match(/position (\d+)/);
     let hint = '';
     if (positionMatch) {
-      const pos = parseInt(positionMatch[1], 10);
+      const pos = Number.parseInt(positionMatch[1], 10);
       const context = text.substring(Math.max(0, pos - 20), pos + 20);
       hint = ` Near: "...${context}..."`;
     }

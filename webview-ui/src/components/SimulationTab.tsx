@@ -308,7 +308,7 @@ function SimulationTab({ apiData }: SimulationTabProps) {
     curl += ` \\\n  -H 'Content-Type: application/json'`;
     
     if (['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
-      curl += ` \\\n  -d '${requestBody.replace(/'/g, "'\"'\"'")}'`;
+      curl += ` \\\n  -d '${requestBody.replaceAll("'", "'\"'\"'")}'`;
     }
     
     return curl;

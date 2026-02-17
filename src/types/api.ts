@@ -26,6 +26,10 @@ export interface ApiEndpoint {
   summary: string;
   description?: string;
   params: ApiParam[];
+  requestBody?: {
+    schema: string;
+    example?: string;
+  };
   responseSchema: ResponseSchema[];
 }
 

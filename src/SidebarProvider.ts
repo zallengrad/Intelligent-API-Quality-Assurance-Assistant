@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ApiData } from './types/api';
+import { ApiData, ProjectScanResult } from './types/api';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'nextjs-api-inspector-sidebar';
   private _view?: vscode.WebviewView;
 
-  constructor(private readonly _extensionUri: vscode.Uri) {}
+  constructor(
+    private readonly _extensionUri: vscode.Uri,
+    private readonly _context: vscode.ExtensionContext
+  ) {}
 
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -64,6 +67,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
       }
     });
+
+    // Check if API key exists and notify webview
+    this.getApiKey().then(key => {
+      if (key) {
+        this.sendApiKeyStatus(true);
+      }
+    });
+  }
+
+  public async getApiKey(): Promise<string | undefined> {
+    return await this._context.secrets.get('geminiApiKey');
+  }
+
+  public sendApiKeyStatus(hasKey: boolean) {
+    if (this._view) {
+      this._view.webview.postMessage({
+        type: 'api-key-status',
+        hasKey,
+      });
+    }
   }
 
   private async _promptForApiKey() {
@@ -74,9 +97,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
 
     if (apiKey) {
-      const config = vscode.workspace.getConfiguration('nextjsApiInspector');
-      await config.update('geminiApiKey', apiKey, vscode.ConfigurationTarget.Global);
-      vscode.window.showInformationMessage('API Key saved successfully!');
+      await this._context.secrets.store('geminiApiKey', apiKey);
+      vscode.window.showInformationMessage('API Key saved securely!');
+      
+      // Initialize AI service
+      const { initializeAI } = await import('./services/aiService');
+      initializeAI(apiKey);
+      
+      this.sendApiKeyStatus(true);
     }
   }
 
@@ -105,6 +133,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         isLoading,
       });
     }
+  }
+
+  private _getNonce() {
+    const crypto =  require('crypto');
+    return crypto.randomBytes(16).toString('hex');
   }
 
   private _getHtmlForWebview(webview: vscode.Webview): string {
@@ -138,7 +171,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const baseUri = webview.asWebviewUri(vscode.Uri.file(distPath));
 
     // Replace relative paths with webview URIs
-    html = html.replace(
+    html = html.replaceAll(
       /(href|src)="\/([^"]*)"/g,
       (match, attr, filePath) => {
         const uri = webview.asWebviewUri(vscode.Uri.file(path.join(distPath, filePath)));
@@ -146,12 +179,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
     );
 
+    const nonce = this._getNonce();
+    
+    // Inject nonce into script tags
+    html = html.replaceAll('<script', `<script nonce="${nonce}"`);
+
     // Add CSP meta tag
     const cspSource = webview.cspSource;
     html = html.replace(
       '<head>',
       `<head>
-      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src ${cspSource} 'unsafe-inline'; font-src ${cspSource}; img-src ${cspSource} https: data:;">`
+      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline' https:; script-src 'nonce-${nonce}' https:; font-src ${cspSource} https:; img-src ${cspSource} https: data:;">`
     );
 
     return html;
@@ -642,7 +680,7 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
   /**
    * Handle export to markdown request
    */
-  private async _handleExportMarkdown(data: any, webview: vscode.Webview) {
+  private async _handleExportMarkdown(data: { projectData: ProjectScanResult }, webview: vscode.Webview) {
     console.log('[Export Markdown] Generating documentation...');
     
     try {
@@ -695,7 +733,7 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
   /**
    * Generate markdown documentation from project data
    */
-  private _generateMarkdown(projectData: any): string {
+  private _generateMarkdown(projectData: ProjectScanResult): string {
     const { totalFiles, totalEndpoints, apis, timestamp } = projectData;
     
     let markdown = `# API Documentation\n\n`;
@@ -711,14 +749,14 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
     // APIs
     markdown += `## 📚 APIs\n\n`;
     
-    apis.forEach((api: any, index: number) => {
+    apis.forEach((api, index: number) => {
       const { relativePath, apiData } = api;
       
       markdown += `### ${apiData.endpoint}\n\n`;
       markdown += `**File:** \`${relativePath}\`\n\n`;
       
       // Each method
-      apiData.endpoints.forEach((endpoint: any) => {
+      apiData.endpoints.forEach((endpoint) => {
         markdown += `#### ${endpoint.method} ${apiData.endpoint}\n\n`;
         
         if (endpoint.description) {
@@ -731,7 +769,7 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
           markdown += `| Name | Type | Location | Required | Description |\n`;
           markdown += `|------|------|----------|----------|-------------|\n`;
           
-          endpoint.params.forEach((param: any) => {
+          endpoint.params.forEach((param) => {
             markdown += `| \`${param.name}\` | ${param.type} | ${param.location} | ${param.required ? '✅' : '❌'} | ${param.description} |\n`;
           });
           markdown += `\n`;
@@ -752,7 +790,7 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
         if (endpoint.responseSchema && endpoint.responseSchema.length > 0) {
           markdown += `**Response:**\n\n`;
           
-          endpoint.responseSchema.forEach((response: any) => {
+          endpoint.responseSchema.forEach((response) => {
             markdown += `**${response.status}** - ${response.contentType}\n\n`;
             markdown += `\`\`\`json\n${response.schema}\n\`\`\`\n\n`;
             
@@ -769,7 +807,7 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
       if (apiData.issues && apiData.issues.length > 0) {
         markdown += `**⚠️ Issues:**\n\n`;
         
-        apiData.issues.forEach((issue: any) => {
+        apiData.issues.forEach((issue) => {
           const icon = issue.severity === 'error' ? '🔴' : issue.severity === 'warning' ? '⚠️' : 'ℹ️';
           markdown += `${icon} **${issue.title}**\n\n`;
           markdown += `${issue.description}\n\n`;
@@ -791,7 +829,7 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
   /**
    * Handle export to Postman collection request
    */
-  private async _handleExportPostman(data: any, webview: vscode.Webview) {
+  private async _handleExportPostman(data: { projectData: ProjectScanResult }, webview: vscode.Webview) {
     console.log('[Export Postman] Generating Postman collection...');
     
     try {
@@ -963,11 +1001,8 @@ JAWAB HANYA DENGAN JSON, TIDAK ADA TEKS LAIN.`;
    * Generate a UUID v4
    */
   private _generateUUID(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+    const crypto = require('crypto');
+    return crypto.randomUUID();
   }
 
   /**

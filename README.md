@@ -11,8 +11,13 @@ A powerful VS Code extension that automatically analyzes and documents Next.js A
   - Request parameters (query, body, headers, path)
   - Response schemas with examples
 - 🧪 **Testing Tools**: Provides ready-to-use cURL and fetch examples
-- 🛡️ **Security Analysis**: Identifies potential security vulnerabilities
-- ⚡ **Scalability Insights**: Detects performance and scalability concerns
+- 🛡️ **Enhanced Security**: 
+    - Content Security Policy (CSP) for all webviews
+    - Secure API Key storage using VS Code Secrets API
+    - Automatic text sanitization to prevent injection attacks
+- ⚡ **Performance & Reliability**: 
+    - Real-time performance analysis with load testing
+    - Optimized for reliability with rigorous input validation
 - 🎨 **Beautiful UI**: Modern sidebar panel built with React and Mantine UI
 
 ## Installation
@@ -188,6 +193,14 @@ npm run watch:webview
 - **Webview UI**: React, TypeScript, Vite, Mantine UI
 - **AI**: Google Gemini 1.5 Flash (Latest)
 
+## Security Features
+
+This extension prioritizes security:
+- **CSP Enforced**: Webviews run under a strict Content Security Policy.
+- **Secure Storage**: API Keys are never stored in plain text; they use the OS's secure credential storage via VS Code Secrets API.
+- **Sanitization**: All AI-generated content is sanitized before rendering to prevent XSS.
+- **Least Privilege**: Docker configurations are set to run as non-root users.
+
 ## Building VSIX
 
 To build the extension as a `.vsix` file for distribution:
@@ -217,8 +230,9 @@ This creates `nextjs-api-inspector-0.0.1.vsix` that can be shared and installed 
 
 ## Roadmap
 
+- [x] Content Security Policy (CSP) implementation
+- [x] Secure Context Storage
 - [ ] Support for Pages Router API routes (`pages/api/**/*.ts`)
-- [ ] Built-in API testing (send requests directly from UI)
 - [ ] Export documentation to Markdown/OpenAPI
 - [ ] Custom AI prompt templates
 - [ ] Response caching to reduce API calls
